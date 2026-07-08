@@ -1,4 +1,4 @@
-use std::{io::Read, os::unix::fs::MetadataExt};
+use std::{fmt::Display, io::Read, os::unix::fs::MetadataExt};
 
 fn main() {
     let mut file = std::fs::File::open("dos/FDBANNER.COM").expect("Failed to open file");
@@ -21,9 +21,89 @@ struct Instruction {
     text: String,
 }
 
-const REG16: [&str; 8] = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"];
+pub enum Register16 {
+    Ax,
+    Cx,
+    Dx,
+    Bx,
+    Sp,
+    Bp,
+    Si,
+    Di,
+}
 
-const REG08: [&str; 8] = ["al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"];
+impl Display for Register16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Register16::Ax => write!(f, "ax"),
+            Register16::Cx => write!(f, "cx"),
+            Register16::Dx => write!(f, "dx"),
+            Register16::Bx => write!(f, "bx"),
+            Register16::Sp => write!(f, "sp"),
+            Register16::Bp => write!(f, "bp"),
+            Register16::Si => write!(f, "si"),
+            Register16::Di => write!(f, "di"),
+        }
+    }
+}
+
+impl From<u8> for Register16 {
+    fn from(value: u8) -> Self {
+        match value & 7 {
+            0 => Self::Ax,
+            1 => Self::Cx,
+            2 => Self::Dx,
+            3 => Self::Bx,
+            4 => Self::Sp,
+            5 => Self::Bp,
+            6 => Self::Si,
+            7 => Self::Di,
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub enum Register8 {
+    Al,
+    Cl,
+    Dl,
+    Bl,
+    Ah,
+    Ch,
+    Dh,
+    Bh,
+}
+
+impl Display for Register8 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Register8::Al => write!(f, "al"),
+            Register8::Cl => write!(f, "cl"),
+            Register8::Dl => write!(f, "dl"),
+            Register8::Bl => write!(f, "bl"),
+            Register8::Ah => write!(f, "ah"),
+            Register8::Ch => write!(f, "ch"),
+            Register8::Dh => write!(f, "dh"),
+            Register8::Bh => write!(f, "bh"),
+        }
+    }
+}
+
+impl From<u8> for Register8 {
+    fn from(value: u8) -> Self {
+        match value & 7 {
+            0 => Self::Al,
+            1 => Self::Cl,
+            2 => Self::Dl,
+            3 => Self::Bl,
+            4 => Self::Ah,
+            5 => Self::Ch,
+            6 => Self::Dh,
+            7 => Self::Bh,
+            _ => unreachable!(),
+        }
+    }
+}
 
 struct Decoder<'a> {
     memory: &'a [u8],
@@ -67,7 +147,52 @@ fn decode_modrm(byte: u8) -> (u8, u8, u8) {
     (mode, reg, rm)
 }
 
-const EA_TABLE: [&str; 8] = ["bx+si", "bx+di", "bp+si", "bp+di", "si", "di", "bp", "bx"];
+pub enum EffectiveAddressBase {
+    BxSi,
+    BxDi,
+    BpSi,
+    BpDi,
+    Si,
+    Di,
+    Bp,
+    Bx,
+}
+
+impl Display for EffectiveAddressBase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BxSi => write!(f, "bx+si"),
+            Self::BxDi => write!(f, "bx+di"),
+            Self::BpSi => write!(f, "bp+si"),
+            Self::BpDi => write!(f, "bp+di"),
+            Self::Si => write!(f, "si"),
+            Self::Di => write!(f, "di"),
+            Self::Bp => write!(f, "bp"),
+            Self::Bx => write!(f, "bx"),
+        }
+    }
+}
+
+impl From<u8> for EffectiveAddressBase {
+    fn from(value: u8) -> Self {
+        match value & 7 {
+            0 => Self::BxSi,
+            1 => Self::BxDi,
+            2 => Self::BpSi,
+            3 => Self::BpDi,
+            4 => Self::Si,
+            5 => Self::Di,
+            6 => Self::Bp,
+            7 => Self::Bx,
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub enum Operand {
+    Register8(Register8),
+    Register16(Register16),
+}
 
 fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> String {
     match mode {
@@ -76,18 +201,18 @@ fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> String {
                 let addr = decoder.read_u16();
                 format!("[{:04X}h]", addr)
             } else {
-                format!("[{}]", EA_TABLE[rm as usize])
+                format!("[{}]", EffectiveAddressBase::from(rm))
             }
         }
         0b01 => {
             let disp = decoder.read_u8() as i8;
-            format!("[{}+{}]", EA_TABLE[rm as usize], disp)
+            format!("[{}+{}]", EffectiveAddressBase::from(rm), disp)
         }
         0b10 => {
             let disp = decoder.read_u16();
-            format!("[{}+{:04X}h]", EA_TABLE[rm as usize], disp)
+            format!("[{}+{:04X}h]", EffectiveAddressBase::from(rm), disp)
         }
-        0b11 => REG08[rm as usize].into(),
+        0b11 => Register8::from(rm).to_string(),
         _ => unreachable!(),
     }
 }
@@ -99,18 +224,18 @@ fn decode_rm16(decoder: &mut Decoder, mode: u8, rm: u8) -> String {
                 let addr = decoder.read_u16();
                 format!("[{:04X}h]", addr)
             } else {
-                format!("[{}]", EA_TABLE[rm as usize])
+                format!("[{}]", EffectiveAddressBase::from(rm))
             }
         }
         0b01 => {
             let disp = decoder.read_u8() as i8;
-            format!("[{}+{}]", EA_TABLE[rm as usize], disp)
+            format!("[{}+{}]", EffectiveAddressBase::from(rm), disp)
         }
         0b10 => {
             let disp = decoder.read_u16();
-            format!("[{}+{:04X}h]", EA_TABLE[rm as usize], disp)
+            format!("[{}+{:04X}h]", EffectiveAddressBase::from(rm), disp)
         }
-        0b11 => REG16[rm as usize].into(),
+        0b11 => Register16::from(rm).to_string(),
         _ => unreachable!(),
     }
 }
@@ -145,7 +270,7 @@ fn decode(decoder: &mut Decoder) -> Instruction {
         0x30 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
-            let src = REG08[reg as usize];
+            let src = Register8::from(reg);
             let dst = decode_rm8(decoder, mode, rm);
 
             format!("xor {},{}", dst, src)
@@ -154,7 +279,7 @@ fn decode(decoder: &mut Decoder) -> Instruction {
         0x31 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
-            let src = REG16[reg as usize];
+            let src = Register16::from(reg);
             let dst = decode_rm16(decoder, mode, rm);
 
             format!("xor {},{}", dst, src)
@@ -162,14 +287,14 @@ fn decode(decoder: &mut Decoder) -> Instruction {
         0x88 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
-            let src = REG08[reg as usize];
+            let src = Register8::from(reg);
             let dst = decode_rm8(decoder, mode, rm);
 
             format!("mov {},{}", dst, src)
         }
         0x40..=0x47 => {
-            let reg = (opcode & 7) as usize;
-            format!("inc {}", REG16[reg])
+            let reg = opcode & 7;
+            format!("inc {}", Register16::from(reg))
         }
         0xFE => {
             let moderm = decoder.read_u8();
@@ -207,7 +332,7 @@ fn decode(decoder: &mut Decoder) -> Instruction {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);
 
-            let src = REG08[reg as usize];
+            let src = Register8::from(reg);
             let dst = decode_rm8(decoder, mode, rm);
 
             format!("test {},{}", dst, src)
@@ -219,7 +344,7 @@ fn decode(decoder: &mut Decoder) -> Instruction {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);
 
-            let src = REG08[reg as usize];
+            let src = Register8::from(reg);
             let dst = decode_rm8(decoder, mode, rm);
 
             format!("xchg {},{}", dst, src)
@@ -228,28 +353,28 @@ fn decode(decoder: &mut Decoder) -> Instruction {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);
 
-            let dst = REG08[reg as usize];
+            let dst = Register8::from(reg);
             let src = decode_rm8(decoder, mode, rm);
 
             format!("mov {},{}", dst, src)
         }
         0xB0..=0xB7 => {
-            let reg = (opcode & 7) as usize;
+            let reg = opcode & 7;
             let value = decoder.read_u8();
-            format!("mov {},{:04X}h", REG08[reg], value)
+            format!("mov {},{:02X}h", Register8::from(reg), value)
         }
         0x50..=0x57 => {
-            let reg = (opcode & 7) as usize;
-            format!("push {}", REG16[reg])
+            let reg = opcode & 7;
+            format!("push {}", Register16::from(reg))
         }
         0x58..=0x5F => {
             let reg = opcode & 7;
-            format!("pop {}", REG16[reg as usize])
+            format!("pop {}", Register16::from(reg))
         }
         0xB8..=0xBF => {
-            let reg = (opcode & 7) as usize;
+            let reg = opcode & 7;
             let value = decoder.read_u16();
-            format!("mov {},{:04X}h", REG16[reg], value)
+            format!("mov {},{:04X}h", Register16::from(reg), value)
         }
         0x90 => "nop".into(),
         0xC3 => "ret".into(),
