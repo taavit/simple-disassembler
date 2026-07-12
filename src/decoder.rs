@@ -1,6 +1,10 @@
 use crate::{
     emulator::Cpu,
-    isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16},
+    isa::{
+        EffectiveAddressBase, MemSpec, Op,
+        Operand::{self, Imm8},
+        Register8, Register16,
+    },
 };
 
 pub struct Decoder<'a> {
@@ -105,15 +109,16 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
             let dst = decode_rm8(decoder, mode, rm);
+            let src = Imm8(1);
             match reg {
-                0 => Op::Rol(dst),
-                1 => Op::Ror(dst),
-                2 => Op::Rcl(dst),
-                3 => Op::Rcr(dst),
-                4 => Op::Shl(dst),
-                5 => Op::Shr(dst),
+                0 => Op::Rol { dst, src },
+                1 => Op::Ror { dst, src },
+                2 => Op::Rcl { dst, src },
+                3 => Op::Rcr { dst, src },
+                4 => Op::Shl { dst, src },
+                5 => Op::Shr { dst, src },
                 6 => Op::Invalid,
-                7 => Op::Sar(dst),
+                7 => Op::Sar { dst, src },
                 _ => unreachable!(),
             }
         }
@@ -148,6 +153,35 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Mov {
                 src: Operand::Register8(src),
                 dst,
+            }
+        }
+        0x8B => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+
+            let dst = Operand::Register16(Register16::from(reg));
+            let src = decode_rm16(decoder, mode, rm);
+
+            Op::Mov { src, dst }
+        }
+        0x83 => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+
+            let dst = decode_rm16(decoder, mode, rm);
+            let imm = decoder.read_u8() as i8 as i16 as u16;
+            let src = Operand::Imm16(imm);
+
+            match reg {
+                0 => Op::Add { src, dst },
+                1 => Op::Or { src, dst },
+                2 => Op::Adc { src, dst },
+                3 => Op::Sbb { src, dst },
+                4 => Op::And { src, dst },
+                5 => Op::Sub { src, dst },
+                6 => Op::Xor { src, dst },
+                7 => Op::Cmp { src, dst },
+                _ => unreachable!(),
             }
         }
         0x40..=0x47 => Op::Inc(Operand::Register16(Register16::from(opcode))),
@@ -227,6 +261,24 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Mov {
                 src: Operand::Imm16(value),
                 dst: Operand::Register16(Register16::from(opcode)),
+            }
+        }
+        0xD1 => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+            let dst = decode_rm16(decoder, mode, rm);
+            let src = Imm8(1);
+
+            match reg {
+                0 => Op::Rol { dst, src },
+                1 => Op::Ror { dst, src },
+                2 => Op::Rcl { dst, src },
+                3 => Op::Rcr { dst, src },
+                4 => Op::Shl { dst, src },
+                5 => Op::Shr { dst, src },
+                6 => Op::Invalid,
+                7 => Op::Sar { dst, src },
+                _ => unreachable!(),
             }
         }
         0x90 => Op::Nop,

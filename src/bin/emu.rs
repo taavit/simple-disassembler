@@ -9,7 +9,7 @@ use loader::{
 fn main() {
     let screen = Screen::new(80, 25);
     let mut cpu = Cpu::new(screen);
-    let mut file = std::fs::File::open("dos/FDBANNER.COM").expect("Failed to open file");
+    let mut file = std::fs::File::open("win/WINDOWS/WIN.COM").expect("Failed to open file");
     file.read(&mut cpu.memory[0x100..])
         .expect("Failed to read file");
 
@@ -163,12 +163,25 @@ fn main() {
                 let v = cpu.get_operand_value(&operand);
                 cpu.set_operand_value(&operand, v.wrapping_add(1));
             }
-            Op::Shl(operand) => {
-                let v = cpu.get_operand_value(&operand);
-                cpu.set_operand_value(&operand, v.wrapping_shl(1));
+            Op::Shl { src, dst } => {
+                let src_value = cpu.get_operand_value(&src);
+                let dst_value = cpu.get_operand_value(&dst);
+                cpu.set_operand_value(&dst, dst_value.wrapping_shl(src_value as u32));
+            }
+            Op::Shr { src, dst } => {
+                let src_value = cpu.get_operand_value(&src);
+                let dst_value = cpu.get_operand_value(&dst);
+                cpu.set_operand_value(&dst, dst_value.wrapping_shr(src_value as u32));
+            }
+            Op::Add { src, dst } => {
+                let src_val = cpu.get_operand_value(&src);
+                let dst_val = cpu.get_operand_value(&dst);
+                let result = src_val.wrapping_add(dst_val);
+                cpu.set_operand_value(&dst, result);
+                cpu.flags.zero = result == 0;
             }
             instruction => {
-                println!("[ERROR] Unknown instruction: {instruction}.");
+                println!("[EMU][ERROR] Unknown instruction: {instruction}.");
                 break;
             }
         }
