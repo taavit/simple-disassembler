@@ -1,4 +1,4 @@
-pub mod isa;
+pub mod decoder;
 pub mod disassembler;
 pub mod emulator;
-pub mod decoder;
+pub mod isa;

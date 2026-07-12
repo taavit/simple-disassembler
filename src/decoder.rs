@@ -1,4 +1,7 @@
-use crate::{emulator::Cpu, isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16}};
+use crate::{
+    emulator::Cpu,
+    isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16},
+};
 
 pub struct Decoder<'a> {
     pub cpu: &'a mut Cpu,

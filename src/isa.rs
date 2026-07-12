@@ -105,7 +105,6 @@ pub enum Operand {
     Mem16(MemSpec),
 }
 
-
 pub enum Op {
     Nop,
     Ret,
@@ -151,4 +150,3 @@ pub enum Op {
 
     Invalid,
 }
-
