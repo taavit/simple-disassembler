@@ -81,6 +81,7 @@ impl Display for Operand {
 impl Display for Op {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Op::Std => f.write_str("std"),
             Op::Nop => f.write_str("nop"),
             Op::Ret => f.write_str("ret"),
             Op::Lodsw => f.write_str("lodsw"),

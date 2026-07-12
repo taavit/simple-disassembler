@@ -89,9 +89,9 @@ pub struct MemSpec {
     pub is_direct: bool,
 }
 
-impl Into<Operand> for Register8 {
-    fn into(self) -> Operand {
-        Operand::Register8(self)
+impl From<Register8> for Operand {
+    fn from(val: Register8) -> Self {
+        Operand::Register8(val)
     }
 }
 
@@ -115,6 +115,7 @@ pub enum Op {
     PushCs,
     PopDs,
     Cld,
+    Std,
 
     Int(u8),
     PopReg16(Register16),

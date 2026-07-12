@@ -13,27 +13,27 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn read_u16(&mut self) -> u16 {
-        let r = self.cpu.read_u16(self.cpu.ip);
-        self.cpu.ip = self.cpu.ip.wrapping_add(2);
+        let r = self.cpu.read_u16(self.cpu.registers.ip());
+        self.cpu.registers.step_ip_by(2);
 
         r
     }
 
     pub fn read_u8(&mut self) -> u8 {
-        let r = self.cpu.read_u8(self.cpu.ip);
-        self.cpu.ip = self.cpu.ip.wrapping_add(1);
+        let r = self.cpu.read_u8(self.cpu.registers.ip());
+        self.cpu.registers.step_ip();
 
         r
     }
 
     pub fn read_rel8(&mut self) -> u16 {
         let offset = self.read_u8() as i8;
-        (self.cpu.ip as i32 + offset as i32) as u16
+        (self.cpu.registers.ip() as i32 + offset as i32) as u16
     }
 
     pub fn read_rel16(&mut self) -> u16 {
         let offset = self.read_u16() as i16;
-        (self.cpu.ip as i32 + offset as i32) as u16
+        (self.cpu.registers.ip() as i32 + offset as i32) as u16
     }
 }
 
@@ -95,7 +95,7 @@ fn decode_rm16(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
 }
 
 pub fn decode(decoder: &mut Decoder) -> Instruction {
-    let address = decoder.cpu.ip;
+    let address = decoder.cpu.registers.ip();
     let opcode = decoder.read_u8();
     let op: Op = match opcode {
         0x06 => Op::PushEs,
@@ -105,6 +105,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0xAD => Op::Lodsw,
         0x1F => Op::PopDs,
         0xFC => Op::Cld,
+        0xFD => Op::Std,
         0xD0 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
@@ -185,6 +186,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             }
         }
         0x40..=0x47 => Op::Inc(Operand::Register16(Register16::from(opcode))),
+        0x48..=0x4F => Op::Dec(Operand::Register16(Register16::from(opcode))),
         0xFE => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
@@ -288,7 +290,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
 
     Instruction {
         address,
-        size: (decoder.cpu.ip - address) as u8,
+        size: (decoder.cpu.registers.ip() - address) as u8,
         op,
     }
 }
