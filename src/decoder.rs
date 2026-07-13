@@ -1,5 +1,5 @@
 use crate::{
-    emulator::Cpu,
+    emulator::{Cpu, Machine},
     isa::{
         EffectiveAddressBase, MemSpec, Op,
         Operand::{self, Imm8},
@@ -9,18 +9,19 @@ use crate::{
 
 pub struct Decoder<'a> {
     pub cpu: &'a mut Cpu,
+    pub machine: &'a mut Machine,
 }
 
 impl<'a> Decoder<'a> {
     pub fn read_u16(&mut self) -> u16 {
-        let r = self.cpu.read_u16(self.cpu.registers.ip());
+        let r = self.machine.read_u16(self.cpu.registers.ip());
         self.cpu.registers.step_ip_by(2);
 
         r
     }
 
     pub fn read_u8(&mut self) -> u8 {
-        let r = self.cpu.read_u8(self.cpu.registers.ip());
+        let r = self.machine.read_u8(self.cpu.registers.ip());
         self.cpu.registers.step_ip();
 
         r
@@ -72,8 +73,8 @@ fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
             let disp = decoder.read_u16() as i16;
             Operand::Mem8(MemSpec {
                 base: EffectiveAddressBase::from(rm),
-                disp: disp,
                 is_direct: false,
+                disp,
             })
         }
         (0b11, _) => Operand::Register8(Register8::from(rm)),

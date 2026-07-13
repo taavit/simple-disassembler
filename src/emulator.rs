@@ -55,7 +55,7 @@ impl Registers {
         if index < 4 {
             self.gpr[index] = (self.gpr[index] & 0xFF00) | value as u16;
         } else {
-            self.gpr[index - 4] = (self.gpr[index - 4] & 0x00FF) | ((value as u16) << 8) as u16;
+            self.gpr[index - 4] = (self.gpr[index - 4] & 0x00FF) | (value << 8) as u16;
         }
     }
 }
@@ -214,25 +214,24 @@ impl VideoCard {
 }
 
 #[derive(Debug)]
-pub struct Cpu {
-    pub registers: Registers,
-    pub flags: Flags,
-    pub memory: [u8; 1024 * 1024],
-    pub screen: VideoCard,
+pub struct Memory {
+    memory: [u8; 640 * 1024],
 }
 
-impl Cpu {
-    pub fn new(screen: VideoCard) -> Self {
-        let mut regs = Registers::default();
-        regs.ip = 0x100;
-        regs.write16(Register16::Sp, 0xFFFE);
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
+impl Memory {
+    pub fn new() -> Self {
         Self {
-            registers: regs,
-            flags: Flags::default(),
-            memory: [0u8; 1024 * 1024],
-            screen,
+            memory: [0u8; 640 * 1024],
         }
+    }
+    pub fn load_com(&mut self, data: &[u8]) {
+        self.memory[0x0100..0x0100 + data.len()].copy_from_slice(data);
     }
     pub fn read_u8(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
@@ -248,6 +247,61 @@ impl Cpu {
         let bytes = value.to_le_bytes();
         self.memory[addr as usize] = bytes[0];
         self.memory[addr as usize + 1] = bytes[1];
+    }
+}
+
+#[derive(Debug)]
+pub struct Cpu {
+    pub registers: Registers,
+    pub flags: Flags,
+}
+
+#[derive(Debug)]
+pub struct Machine {
+    pub memory: Memory,
+    pub screen: VideoCard,
+}
+
+impl Machine {
+    pub fn new(memory: Memory, screen: VideoCard) -> Self {
+        Self { memory, screen }
+    }
+
+    pub fn read_u8(&mut self, addr: u16) -> u8 {
+        self.memory.read_u8(addr)
+    }
+
+    pub fn read_u16(&mut self, addr: u16) -> u16 {
+        self.memory.read_u16(addr)
+    }
+
+    pub fn write_u8(&mut self, addr: u16, val: u8) {
+        self.memory.write_u8(addr, val);
+    }
+
+    pub fn write_u16(&mut self, addr: u16, val: u16) {
+        self.memory.write_u16(addr, val);
+    }
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Cpu {
+    pub fn new() -> Self {
+        let mut regs = Registers {
+            ip: 0x100,
+            ..Default::default()
+        };
+        regs.write16(Register16::Sp, 0xFFFE);
+
+        Self {
+            registers: regs,
+            flags: Flags::default(),
+        }
     }
 
     fn resolve_address(&self, spec: &MemSpec) -> u16 {
@@ -282,52 +336,52 @@ impl Cpu {
         base_value.wrapping_add(spec.disp as u16)
     }
 
-    pub fn get_operand_value(&self, operand: &Operand) -> u16 {
+    pub fn get_operand_value(&self, machine: &mut Machine, operand: &Operand) -> u16 {
         match operand {
             Operand::Register8(reg) => self.registers.read8(*reg) as u16,
             Operand::Register16(reg) => self.registers.read16(*reg),
             Operand::Imm8(val) => *val as u16,
             Operand::Imm16(val) => *val,
             Operand::RelAddress(val) => *val,
-            Operand::Mem8(spec) => self.read_u8(self.resolve_address(spec)) as u16,
-            Operand::Mem16(spec) => self.read_u16(self.resolve_address(spec)),
+            Operand::Mem8(spec) => machine.read_u8(self.resolve_address(spec)) as u16,
+            Operand::Mem16(spec) => machine.read_u16(self.resolve_address(spec)),
         }
     }
 
-    pub fn set_operand_value(&mut self, operand: &Operand, value: u16) {
+    pub fn set_operand_value(&mut self, machine: &mut Machine, operand: &Operand, value: u16) {
         match operand {
             Operand::Register8(reg) => self.registers.write8(*reg, value as u8),
             Operand::Register16(reg) => self.registers.write16(*reg, value),
-            Operand::Mem8(spec) => self.write_u8(self.resolve_address(spec), value as u8),
-            Operand::Mem16(spec) => self.write_u16(self.resolve_address(spec), value),
+            Operand::Mem8(spec) => machine.write_u8(self.resolve_address(spec), value as u8),
+            Operand::Mem16(spec) => machine.write_u16(self.resolve_address(spec), value),
             _ => panic!("Operand read only!"),
         }
     }
 
-    pub fn execute(&mut self, instruction: Op) -> bool {
+    pub fn execute(&mut self, machine: &mut Machine, instruction: Op) -> bool {
         match instruction {
             Op::Nop => {}
             Op::Mov { src, dst } => {
-                let value = self.get_operand_value(&src);
-                self.set_operand_value(&dst, value);
+                let value = self.get_operand_value(machine, &src);
+                self.set_operand_value(machine, &dst, value);
             }
             Op::Xor { src, dst } => {
-                let v1 = self.get_operand_value(&src);
-                let v2 = self.get_operand_value(&dst);
+                let v1 = self.get_operand_value(machine, &src);
+                let v2 = self.get_operand_value(machine, &dst);
                 let r = v1 ^ v2;
                 self.flags.zero = r == 0;
-                self.set_operand_value(&dst, r);
+                self.set_operand_value(machine, &dst, r);
             }
             Op::PushCs => {
                 let curret_sp = self.registers.read16(Register16::Sp);
                 let new_sp = curret_sp.wrapping_sub(2);
                 self.registers.write16(Register16::Sp, new_sp);
                 let cs_val = 0u16;
-                self.write_u16(new_sp, cs_val);
+                machine.write_u16(new_sp, cs_val);
             }
             Op::PopDs => {
                 let curret_sp = self.registers.read16(Register16::Sp);
-                let _val = self.read_u16(curret_sp);
+                let _val = machine.read_u16(curret_sp);
                 self.registers
                     .write16(Register16::Sp, curret_sp.wrapping_add(2));
             }
@@ -339,7 +393,7 @@ impl Cpu {
             }
             Op::Lodsw => {
                 let si_address = self.registers.read16(Register16::Si);
-                let val = self.read_u16(si_address);
+                let val = machine.read_u16(si_address);
                 self.registers.write16(Register16::Ax, val);
                 self.registers.write16(
                     Register16::Si,
@@ -351,21 +405,21 @@ impl Cpu {
                 );
             }
             Op::Xchg { src, dst } => {
-                let v1 = self.get_operand_value(&src);
-                let v2 = self.get_operand_value(&dst);
-                self.set_operand_value(&src, v2);
-                self.set_operand_value(&dst, v1);
+                let v1 = self.get_operand_value(machine, &src);
+                let v2 = self.get_operand_value(machine, &dst);
+                self.set_operand_value(machine, &src, v2);
+                self.set_operand_value(machine, &dst, v1);
             }
             Op::PushReg16(reg) => {
                 let curret_sp = self.registers.read16(Register16::Sp);
                 let new_sp = curret_sp.wrapping_sub(2);
                 self.registers.write16(Register16::Sp, new_sp);
                 let val = self.registers.read16(reg);
-                self.write_u16(new_sp, val);
+                machine.write_u16(new_sp, val);
             }
             Op::PopReg16(reg) => {
                 let curret_sp = self.registers.read16(Register16::Sp);
-                let value = self.read_u16(curret_sp);
+                let value = machine.read_u16(curret_sp);
                 self.registers
                     .write16(Register16::Sp, curret_sp.wrapping_add(2));
                 self.registers.write16(reg, value);
@@ -377,15 +431,15 @@ impl Cpu {
                         let page = self.registers.read8(Register8::Bh);
                         let row = self.registers.read8(Register8::Dh);
                         let col = self.registers.read8(Register8::Dl);
-                        self.screen.set_cursor_pos(page, row, col);
+                        machine.screen.set_cursor_pos(page, row, col);
                     }
                     0x03 => {
                         self.registers.write8(Register8::Ch, 0);
                         self.registers.write8(Register8::Cl, 15);
                         self.registers
-                            .write8(Register8::Dh, self.screen.current_row);
+                            .write8(Register8::Dh, machine.screen.current_row);
                         self.registers
-                            .write8(Register8::Dl, self.screen.current_col);
+                            .write8(Register8::Dl, machine.screen.current_col);
                     }
                     0x09 => {
                         let character = self.registers.read8(Register8::Al);
@@ -393,7 +447,8 @@ impl Cpu {
                         let attribute = self.registers.read8(Register8::Bl);
                         let count = self.registers.read16(Register16::Cx);
 
-                        self.screen
+                        machine
+                            .screen
                             .write_char_and_attr_at_current(page, character, attribute, count);
                     }
                     0x0F => {
@@ -411,17 +466,17 @@ impl Cpu {
                 match ah {
                     0x02 => {
                         let data = self.registers.read8(Register8::Dl);
-                        self.screen.write_char(data);
+                        machine.screen.write_char(data);
                     }
                     0x09 => {
                         let mut addr = self.registers.read16(Register16::Dx);
                         loop {
-                            let ch = self.read_u8(addr);
+                            let ch = machine.read_u8(addr);
                             if ch == b'$' {
                                 break;
                             }
 
-                            self.screen.write_char(ch);
+                            machine.screen.write_char(ch);
                             addr = addr.wrapping_add(1);
                         }
                     }
@@ -442,67 +497,67 @@ impl Cpu {
                 }
             }
             Op::Cmp { src, dst } => {
-                let src_val = self.get_operand_value(&src);
-                let dst_val = self.get_operand_value(&dst);
+                let src_val = self.get_operand_value(machine, &src);
+                let dst_val = self.get_operand_value(machine, &dst);
 
                 let (res, _overflow) = dst_val.overflowing_sub(src_val);
                 self.flags.zero = res == 0;
             }
             Op::Test { src, dst } => {
-                let src_val = self.get_operand_value(&src);
-                let dst_val = self.get_operand_value(&dst);
+                let src_val = self.get_operand_value(machine, &src);
+                let dst_val = self.get_operand_value(machine, &dst);
 
                 let res = dst_val & src_val;
                 self.flags.zero = res == 0;
             }
             Op::Jnz(target) => {
-                let dest = self.get_operand_value(&target);
+                let dest = self.get_operand_value(machine, &target);
                 if !self.flags.zero {
                     self.registers.set_ip(dest);
                 }
             }
             Op::Jz(target) => {
-                let dest = self.get_operand_value(&target);
+                let dest = self.get_operand_value(machine, &target);
                 if self.flags.zero {
                     self.registers.set_ip(dest);
                 }
             }
             Op::Jmp(target) => {
-                let dest = self.get_operand_value(&target);
+                let dest = self.get_operand_value(machine, &target);
                 self.registers.set_ip(dest);
             }
             Op::Dec(operand) => {
-                let v = self.get_operand_value(&operand);
-                self.set_operand_value(&operand, v.wrapping_sub(1));
+                let v = self.get_operand_value(machine, &operand);
+                self.set_operand_value(machine, &operand, v.wrapping_sub(1));
             }
             Op::Inc(operand) => {
-                let v = self.get_operand_value(&operand);
-                self.set_operand_value(&operand, v.wrapping_add(1));
+                let v = self.get_operand_value(machine, &operand);
+                self.set_operand_value(machine, &operand, v.wrapping_add(1));
             }
             Op::Shl { src, dst } => {
-                let src_value = self.get_operand_value(&src);
-                let dst_value = self.get_operand_value(&dst);
-                self.set_operand_value(&dst, dst_value.wrapping_shl(src_value as u32));
+                let src_value = self.get_operand_value(machine, &src);
+                let dst_value = self.get_operand_value(machine, &dst);
+                self.set_operand_value(machine, &dst, dst_value.wrapping_shl(src_value as u32));
             }
             Op::Shr { src, dst } => {
-                let src_value = self.get_operand_value(&src);
-                let dst_value = self.get_operand_value(&dst);
-                self.set_operand_value(&dst, dst_value.wrapping_shr(src_value as u32));
+                let src_value = self.get_operand_value(machine, &src);
+                let dst_value = self.get_operand_value(machine, &dst);
+                self.set_operand_value(machine, &dst, dst_value.wrapping_shr(src_value as u32));
             }
             Op::Add { src, dst } => {
-                let src_val = self.get_operand_value(&src);
-                let dst_val = self.get_operand_value(&dst);
+                let src_val = self.get_operand_value(machine, &src);
+                let dst_val = self.get_operand_value(machine, &dst);
                 let result = src_val.wrapping_add(dst_val);
-                self.set_operand_value(&dst, result);
+                self.set_operand_value(machine, &dst, result);
                 self.flags.zero = result == 0;
             }
             Op::Ret => {
-                let ip = self.pop_u16();
+                let ip = self.pop_u16(machine);
                 self.registers.set_ip(ip);
             }
             Op::Call { target } => {
-                let dest = self.get_operand_value(&target);
-                self.push_u16(self.registers.ip());
+                let dest = self.get_operand_value(machine, &target);
+                self.push_u16(machine, self.registers.ip());
                 self.registers.set_ip(dest);
             }
             instruction => {
@@ -514,19 +569,19 @@ impl Cpu {
         true
     }
 
-    fn pop_u16(&mut self) -> u16 {
+    fn pop_u16(&mut self, machine: &mut Machine) -> u16 {
         let curret_sp = self.registers.read16(Register16::Sp);
-        let value = self.read_u16(curret_sp);
+        let value = machine.read_u16(curret_sp);
         self.registers
             .write16(Register16::Sp, curret_sp.wrapping_add(2));
         value
     }
 
-    fn push_u16(&mut self, val: u16) {
+    fn push_u16(&mut self, machine: &mut Machine, val: u16) {
         let curret_sp = self.registers.read16(Register16::Sp);
         let new_sp = curret_sp.wrapping_sub(2);
         self.registers.write16(Register16::Sp, new_sp);
-        self.write_u16(new_sp, val);
+        machine.write_u16(new_sp, val);
     }
 }
 
