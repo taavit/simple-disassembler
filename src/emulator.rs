@@ -55,7 +55,7 @@ impl Registers {
         if index < 4 {
             self.gpr[index] = (self.gpr[index] & 0xFF00) | value as u16;
         } else {
-            self.gpr[index - 4] = (self.gpr[index - 4] & 0x00FF) | (value << 8) as u16;
+            self.gpr[index - 4] = (self.gpr[index - 4] & 0x00FF) | ((value as u16) << 8);
         }
     }
 }
