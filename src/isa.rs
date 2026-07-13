@@ -125,6 +125,7 @@ pub enum Op {
     Jmp(Operand),
     Jz(Operand),
     Jnz(Operand),
+    Call { target: Operand },
 
     Db(u8),
 

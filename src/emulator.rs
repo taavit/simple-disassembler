@@ -396,6 +396,11 @@ impl Cpu {
                         self.screen
                             .write_char_and_attr_at_current(page, character, attribute, count);
                     }
+                    0x0F => {
+                        self.registers.write8(Register8::Al, 3);
+                        self.registers.write8(Register8::Ah, 80);
+                        self.registers.write8(Register8::Bh, 0);
+                    }
                     _ => {
                         panic!("Unhandled 0x10:{:02X}", ah)
                     }
@@ -407,6 +412,25 @@ impl Cpu {
                     0x02 => {
                         let data = self.registers.read8(Register8::Dl);
                         self.screen.write_char(data);
+                    }
+                    0x09 => {
+                        let mut addr = self.registers.read16(Register16::Dx);
+                        loop {
+                            let ch = self.read_u8(addr);
+                            if ch == b'$' {
+                                break;
+                            }
+
+                            self.screen.write_char(ch);
+                            addr = addr.wrapping_add(1);
+                        }
+                    }
+                    0x30 => {
+                        self.registers.write8(Register8::Al, 3);
+                        self.registers.write8(Register8::Ah, 30);
+                        self.registers.write8(Register8::Bh, 0);
+                        self.registers.write8(Register8::Bl, 0);
+                        self.registers.write16(Register16::Cx, 0);
                     }
                     0x4C => {
                         let _exit_status = self.registers.read8(Register8::Al);
@@ -472,6 +496,15 @@ impl Cpu {
                 self.set_operand_value(&dst, result);
                 self.flags.zero = result == 0;
             }
+            Op::Ret => {
+                let ip = self.pop_u16();
+                self.registers.set_ip(ip);
+            }
+            Op::Call { target } => {
+                let dest = self.get_operand_value(&target);
+                self.push_u16(self.registers.ip());
+                self.registers.set_ip(dest);
+            }
             instruction => {
                 println!("[EMU][ERROR] Unknown instruction: {instruction}.");
                 return false;
@@ -479,6 +512,21 @@ impl Cpu {
         }
 
         true
+    }
+
+    fn pop_u16(&mut self) -> u16 {
+        let curret_sp = self.registers.read16(Register16::Sp);
+        let value = self.read_u16(curret_sp);
+        self.registers
+            .write16(Register16::Sp, curret_sp.wrapping_add(2));
+        value
+    }
+
+    fn push_u16(&mut self, val: u16) {
+        let curret_sp = self.registers.read16(Register16::Sp);
+        let new_sp = curret_sp.wrapping_sub(2);
+        self.registers.write16(Register16::Sp, new_sp);
+        self.write_u16(new_sp, val);
     }
 }
 

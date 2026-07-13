@@ -28,12 +28,12 @@ impl<'a> Decoder<'a> {
 
     pub fn read_rel8(&mut self) -> u16 {
         let offset = self.read_u8() as i8;
-        (self.cpu.registers.ip() as i32 + offset as i32) as u16
+        self.cpu.registers.ip().wrapping_add_signed(offset as i16)
     }
 
     pub fn read_rel16(&mut self) -> u16 {
         let offset = self.read_u16() as i16;
-        (self.cpu.registers.ip() as i32 + offset as i32) as u16
+        self.cpu.registers.ip().wrapping_add_signed(offset)
     }
 }
 
@@ -145,6 +145,29 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
                 dst,
             }
         }
+        0x33 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let dst = Register16::from(reg);
+            let src = decode_rm16(decoder, mode, rm);
+
+            Op::Xor {
+                dst: Operand::Register16(dst),
+                src,
+            }
+        }
+        0xC6 => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+            if reg != 0 {
+                Op::Invalid
+            } else {
+                let dst = decode_rm8(decoder, mode, rm);
+                let src = Operand::Imm8(decoder.read_u8());
+
+                Op::Mov { src, dst }
+            }
+        }
         0x88 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
@@ -183,6 +206,13 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
                 6 => Op::Xor { src, dst },
                 7 => Op::Cmp { src, dst },
                 _ => unreachable!(),
+            }
+        }
+        0x3D => {
+            let imm = decoder.read_u16();
+            Op::Cmp {
+                src: Operand::Imm16(imm),
+                dst: Operand::Register16(Register16::Ax),
             }
         }
         0x40..=0x47 => Op::Inc(Operand::Register16(Register16::from(opcode))),
@@ -263,6 +293,12 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Mov {
                 src: Operand::Imm16(value),
                 dst: Operand::Register16(Register16::from(opcode)),
+            }
+        }
+        0xE8 => {
+            let rel = decoder.read_rel16();
+            Op::Call {
+                target: Operand::RelAddress(rel),
             }
         }
         0xD1 => {

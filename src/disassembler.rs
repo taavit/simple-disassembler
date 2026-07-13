@@ -119,6 +119,7 @@ impl Display for Op {
             Op::And { src, dst } => write!(f, "and {dst},{src}"),
             Op::Sub { src, dst } => write!(f, "sub {dst},{src}"),
             Op::Cmp { src, dst } => write!(f, "cmp {dst},{src}"),
+            Op::Call { target: offset } => write!(f, "call {offset}"),
 
             Op::Db(v) => write!(f, "db {:02X}h", v),
             Op::Invalid => write!(f, "(invalid)"),
