@@ -1,6 +1,10 @@
 use std::fmt::Display;
 
-use crate::isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16};
+use crate::{
+    bios::Bios,
+    dos::Dos,
+    isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16},
+};
 
 #[derive(Debug, Default)]
 pub struct Registers {
@@ -425,76 +429,10 @@ impl Cpu {
                 self.registers.write16(reg, value);
             }
             Op::Int(0x10) => {
-                let ah = self.registers.read8(Register8::Ah);
-                match ah {
-                    0x02 => {
-                        let page = self.registers.read8(Register8::Bh);
-                        let row = self.registers.read8(Register8::Dh);
-                        let col = self.registers.read8(Register8::Dl);
-                        machine.screen.set_cursor_pos(page, row, col);
-                    }
-                    0x03 => {
-                        self.registers.write8(Register8::Ch, 0);
-                        self.registers.write8(Register8::Cl, 15);
-                        self.registers
-                            .write8(Register8::Dh, machine.screen.current_row);
-                        self.registers
-                            .write8(Register8::Dl, machine.screen.current_col);
-                    }
-                    0x09 => {
-                        let character = self.registers.read8(Register8::Al);
-                        let page = self.registers.read8(Register8::Bh);
-                        let attribute = self.registers.read8(Register8::Bl);
-                        let count = self.registers.read16(Register16::Cx);
-
-                        machine
-                            .screen
-                            .write_char_and_attr_at_current(page, character, attribute, count);
-                    }
-                    0x0F => {
-                        self.registers.write8(Register8::Al, 3);
-                        self.registers.write8(Register8::Ah, 80);
-                        self.registers.write8(Register8::Bh, 0);
-                    }
-                    _ => {
-                        panic!("Unhandled 0x10:{:02X}", ah)
-                    }
-                }
+                return Bios::handle_interrupt(0x10, self, machine);
             }
             Op::Int(0x21) => {
-                let ah = self.registers.read8(Register8::Ah);
-                match ah {
-                    0x02 => {
-                        let data = self.registers.read8(Register8::Dl);
-                        machine.screen.write_char(data);
-                    }
-                    0x09 => {
-                        let mut addr = self.registers.read16(Register16::Dx);
-                        loop {
-                            let ch = machine.read_u8(addr);
-                            if ch == b'$' {
-                                break;
-                            }
-
-                            machine.screen.write_char(ch);
-                            addr = addr.wrapping_add(1);
-                        }
-                    }
-                    0x30 => {
-                        self.registers.write8(Register8::Al, 3);
-                        self.registers.write8(Register8::Ah, 30);
-                        self.registers.write8(Register8::Bh, 0);
-                        self.registers.write8(Register8::Bl, 0);
-                        self.registers.write16(Register16::Cx, 0);
-                    }
-                    0x4C => {
-                        let _exit_status = self.registers.read8(Register8::Al);
-                        return false;
-                    }
-                    _ => {
-                        panic!("Unhandled 0x21:{:02X}", ah)
-                    }
-                }
+                return Dos::handle_interrupt(0x21, self, machine);
             }
             Op::Cmp { src, dst } => {
                 let src_val = self.get_operand_value(machine, &src);
