@@ -74,14 +74,12 @@ impl Display for Operand {
                     write!(f, "word ptr [{}{:+X}]", m.base, m.disp)
                 }
             }
-            Operand::SegmentRegister(reg) => {
-                match reg {
-                    SegmentRegister::Cs => write!(f, "cs"),
-                    SegmentRegister::Ds => write!(f, "ds"),
-                    SegmentRegister::Es => write!(f, "es"),
-                    SegmentRegister::Ss => write!(f, "ss"),
-                }
-            }
+            Operand::SegmentRegister(reg) => match reg {
+                SegmentRegister::Cs => write!(f, "cs"),
+                SegmentRegister::Ds => write!(f, "ds"),
+                SegmentRegister::Es => write!(f, "es"),
+                SegmentRegister::Ss => write!(f, "ss"),
+            },
         }
     }
 }

@@ -78,13 +78,13 @@ pub enum EffectiveAddressBase {
     None,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum SegmentRegister {
     Es,
     Cs,
     Ss,
     Ds,
 }
-
 
 impl From<u8> for EffectiveAddressBase {
     fn from(value: u8) -> Self {

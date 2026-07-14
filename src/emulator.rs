@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
 use crate::{
-    bios::Bios, dos::Dos, isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16, SegmentRegister},
+    bios::Bios,
+    dos::Dos,
+    isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16, SegmentRegister},
 };
 
 #[derive(Debug, Default)]
@@ -33,17 +35,30 @@ impl Registers {
         self.ip
     }
 
-    pub fn cs(&self) -> u16 {
-        self.cs
+    pub fn read_segment(&self, reg: SegmentRegister) -> u16 {
+        match reg {
+            SegmentRegister::Cs => self.cs,
+            SegmentRegister::Es => self.es,
+            SegmentRegister::Ds => self.ds,
+            SegmentRegister::Ss => self.ss,
+        }
     }
-    pub fn ds(&self) -> u16 {
-        self.ds
-    }
-    pub fn es(&self) -> u16 {
-        self.es
-    }
-    pub fn ss(&self) -> u16 {
-        self.ss
+
+    pub fn write_segment(&mut self, reg: SegmentRegister, val: u16) {
+        match reg {
+            SegmentRegister::Cs => {
+                self.cs = val;
+            }
+            SegmentRegister::Ds => {
+                self.ds = val;
+            }
+            SegmentRegister::Es => {
+                self.es = val;
+            }
+            SegmentRegister::Ss => {
+                self.ss = val;
+            }
+        }
     }
 }
 
@@ -360,12 +375,7 @@ impl Cpu {
             Operand::RelAddress(val) => *val,
             Operand::Mem8(spec) => machine.read_u8(self.resolve_address(spec)) as u16,
             Operand::Mem16(spec) => machine.read_u16(self.resolve_address(spec)),
-            Operand::SegmentRegister(reg) => match reg {
-                SegmentRegister::Cs => self.registers.cs(),
-                SegmentRegister::Ds => self.registers.ds(),
-                SegmentRegister::Es => self.registers.es(),
-                SegmentRegister::Ss => self.registers.ss(),
-            }
+            Operand::SegmentRegister(reg) => self.registers.read_segment(*reg),
         }
     }
 
@@ -375,14 +385,7 @@ impl Cpu {
             Operand::Register16(reg) => self.registers.write16(*reg, value),
             Operand::Mem8(spec) => machine.write_u8(self.resolve_address(spec), value as u8),
             Operand::Mem16(spec) => machine.write_u16(self.resolve_address(spec), value),
-            Operand::SegmentRegister(reg) => {
-                match reg {
-                    SegmentRegister::Cs => self.registers.cs = value,
-                    SegmentRegister::Ds => self.registers.ds = value,
-                    SegmentRegister::Es => self.registers.es = value,
-                    SegmentRegister::Ss => self.registers.ss = value,
-                }
-            }
+            Operand::SegmentRegister(reg) => self.registers.write_segment(*reg, value),
             _ => panic!("Operand read only!"),
         }
     }
@@ -402,17 +405,11 @@ impl Cpu {
                 self.set_operand_value(machine, &dst, r);
             }
             Op::PushCs => {
-                let curret_sp = self.registers.read16(Register16::Sp);
-                let new_sp = curret_sp.wrapping_sub(2);
-                self.registers.write16(Register16::Sp, new_sp);
-                let cs_val = 0u16;
-                machine.write_u16(new_sp, cs_val);
+                self.push_u16(machine, self.registers.read_segment(SegmentRegister::Cs));
             }
             Op::PopDs => {
-                let curret_sp = self.registers.read16(Register16::Sp);
-                let _val = machine.read_u16(curret_sp);
-                self.registers
-                    .write16(Register16::Sp, curret_sp.wrapping_add(2));
+                let val = self.pop_u16(machine);
+                self.registers.write_segment(SegmentRegister::Ds, val);
             }
             Op::Cld => {
                 self.flags.direction = false;
@@ -491,21 +488,27 @@ impl Cpu {
             }
             Op::Dec(operand) => {
                 let v = self.get_operand_value(machine, &operand);
-                self.set_operand_value(machine, &operand, v.wrapping_sub(1));
+                let result = v.wrapping_sub(1);
+                self.set_operand_value(machine, &operand, result);
+                self.flags.zero = result == 0;
             }
             Op::Inc(operand) => {
                 let v = self.get_operand_value(machine, &operand);
-                self.set_operand_value(machine, &operand, v.wrapping_add(1));
+                let result = v.wrapping_add(1);
+                self.set_operand_value(machine, &operand, result);
+                self.flags.zero = result == 0;
             }
             Op::Shl { src, dst } => {
                 let src_value = self.get_operand_value(machine, &src);
                 let dst_value = self.get_operand_value(machine, &dst);
-                self.set_operand_value(machine, &dst, dst_value.wrapping_shl(src_value as u32));
+                let result = dst_value.wrapping_shl(src_value as u32);
+                self.set_operand_value(machine, &dst, result);
+                self.flags.zero = result == 0;
             }
             Op::Shr { src, dst } => {
                 let src_value = self.get_operand_value(machine, &src);
                 let dst_value = self.get_operand_value(machine, &dst);
-                let result =  dst_value.wrapping_shr(src_value as u32);
+                let result = dst_value.wrapping_shr(src_value as u32);
                 self.set_operand_value(machine, &dst, result);
                 self.flags.zero = result == 0;
             }
@@ -525,11 +528,18 @@ impl Cpu {
                 self.push_u16(machine, self.registers.ip());
                 self.registers.set_ip(dest);
             }
-            Op::Jcxz(target)  => {
+            Op::Jcxz(target) => {
                 if self.registers.read16(Register16::Cx) == 0 {
-                    let dest =  self.get_operand_value(machine, &target);
+                    let dest = self.get_operand_value(machine, &target);
                     self.registers.set_ip(dest);
                 }
+            }
+            Op::PushEs => {
+                self.push_u16(machine, self.registers.read_segment(SegmentRegister::Es));
+            }
+            Op::PopEs => {
+                let v = self.pop_u16(machine);
+                self.registers.write_segment(SegmentRegister::Es, v);
             }
             instruction => {
                 println!("[EMU][ERROR] Unknown instruction: {instruction}.");

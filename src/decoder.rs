@@ -1,6 +1,9 @@
 use crate::{
-    emulator::{Cpu, Machine}, isa::{
-        EffectiveAddressBase, MemSpec, Op, Operand::{self, Imm8}, Register8, Register16, SegmentRegister,
+    emulator::{Cpu, Machine},
+    isa::{
+        EffectiveAddressBase, MemSpec, Op,
+        Operand::{self, Imm8},
+        Register8, Register16, SegmentRegister,
     },
 };
 
@@ -106,7 +109,10 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0xFD => Op::Std,
         0x05 => {
             let imm = decoder.read_u16();
-            Op::Add { src: Operand::Imm16(imm), dst: Operand::Register16(Register16::Ax) }
+            Op::Add {
+                src: Operand::Imm16(imm),
+                dst: Operand::Register16(Register16::Ax),
+            }
         }
         0xD0 => {
             let moderm = decoder.read_u8();
@@ -157,7 +163,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
             let dst = Register16::from(reg);
-            let src = decode_rm8(decoder, mode, rm);
+            let src = decode_rm16(decoder, mode, rm);
             Op::Add {
                 src,
                 dst: Operand::Register16(dst),
@@ -213,7 +219,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
             let src = Register16::from(reg);
-            let dst = decode_rm8(decoder, mode, rm);
+            let dst = decode_rm16(decoder, mode, rm);
 
             Op::Mov {
                 src: Operand::Register16(src),
