@@ -1,6 +1,6 @@
 use core::fmt::Display;
 
-use crate::isa::{EffectiveAddressBase, Op, Operand, Register8, Register16};
+use crate::isa::{EffectiveAddressBase, Op, Operand, Register8, Register16, SegmentRegister};
 
 impl Display for Register16 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -74,6 +74,14 @@ impl Display for Operand {
                     write!(f, "word ptr [{}{:+X}]", m.base, m.disp)
                 }
             }
+            Operand::SegmentRegister(reg) => {
+                match reg {
+                    SegmentRegister::Cs => write!(f, "cs"),
+                    SegmentRegister::Ds => write!(f, "ds"),
+                    SegmentRegister::Es => write!(f, "es"),
+                    SegmentRegister::Ss => write!(f, "ss"),
+                }
+            }
         }
     }
 }
@@ -98,6 +106,7 @@ impl Display for Op {
 
             Op::Jmp(j) => write!(f, "jmp {j}"),
             Op::Jz(j) => write!(f, "jz {j}"),
+            Op::Jcxz(j) => write!(f, "jcxz {j}"),
             Op::Jnz(j) => write!(f, "jnz {j}"),
             Op::Mov { src, dst } => write!(f, "mov {dst},{src}"),
             Op::Xor { src, dst } => write!(f, "xor {dst},{src}"),

@@ -26,6 +26,18 @@ impl From<u8> for Register16 {
     }
 }
 
+impl From<u8> for SegmentRegister {
+    fn from(value: u8) -> Self {
+        match value & 3 {
+            0 => Self::Es,
+            1 => Self::Cs,
+            2 => Self::Ss,
+            3 => Self::Ds,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Register8 {
     Al,
@@ -66,6 +78,14 @@ pub enum EffectiveAddressBase {
     None,
 }
 
+pub enum SegmentRegister {
+    Es,
+    Cs,
+    Ss,
+    Ds,
+}
+
+
 impl From<u8> for EffectiveAddressBase {
     fn from(value: u8) -> Self {
         match value & 7 {
@@ -103,6 +123,7 @@ pub enum Operand {
     RelAddress(u16),
     Mem8(MemSpec),
     Mem16(MemSpec),
+    SegmentRegister(SegmentRegister),
 }
 
 pub enum Op {
@@ -124,6 +145,7 @@ pub enum Op {
     Dec(Operand),
     Jmp(Operand),
     Jz(Operand),
+    Jcxz(Operand),
     Jnz(Operand),
     Call { target: Operand },
 

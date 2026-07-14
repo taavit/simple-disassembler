@@ -1,9 +1,6 @@
 use crate::{
-    emulator::{Cpu, Machine},
-    isa::{
-        EffectiveAddressBase, MemSpec, Op,
-        Operand::{self, Imm8},
-        Register8, Register16,
+    emulator::{Cpu, Machine}, isa::{
+        EffectiveAddressBase, MemSpec, Op, Operand::{self, Imm8}, Register8, Register16, SegmentRegister,
     },
 };
 
@@ -107,11 +104,32 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0x1F => Op::PopDs,
         0xFC => Op::Cld,
         0xFD => Op::Std,
+        0x05 => {
+            let imm = decoder.read_u16();
+            Op::Add { src: Operand::Imm16(imm), dst: Operand::Register16(Register16::Ax) }
+        }
         0xD0 => {
             let moderm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(moderm);
             let dst = decode_rm8(decoder, mode, rm);
             let src = Imm8(1);
+            match reg {
+                0 => Op::Rol { dst, src },
+                1 => Op::Ror { dst, src },
+                2 => Op::Rcl { dst, src },
+                3 => Op::Rcr { dst, src },
+                4 => Op::Shl { dst, src },
+                5 => Op::Shr { dst, src },
+                6 => Op::Invalid,
+                7 => Op::Sar { dst, src },
+                _ => unreachable!(),
+            }
+        }
+        0xD3 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let dst = decode_rm16(decoder, mode, rm);
+            let src = Operand::Register8(Register8::Cl);
             match reg {
                 0 => Op::Rol { dst, src },
                 1 => Op::Ror { dst, src },
@@ -132,6 +150,17 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Xor {
                 src: Operand::Register8(src),
                 dst,
+            }
+        }
+
+        0x03 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let dst = Register16::from(reg);
+            let src = decode_rm8(decoder, mode, rm);
+            Op::Add {
+                src,
+                dst: Operand::Register16(dst),
             }
         }
 
@@ -180,12 +209,32 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
                 dst,
             }
         }
+        0x89 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let src = Register16::from(reg);
+            let dst = decode_rm8(decoder, mode, rm);
+
+            Op::Mov {
+                src: Operand::Register16(src),
+                dst,
+            }
+        }
         0x8B => {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);
 
             let dst = Operand::Register16(Register16::from(reg));
             let src = decode_rm16(decoder, mode, rm);
+
+            Op::Mov { src, dst }
+        }
+        0x8C => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+
+            let src = Operand::SegmentRegister(SegmentRegister::from(reg));
+            let dst = decode_rm16(decoder, mode, rm);
 
             Op::Mov { src, dst }
         }
@@ -263,6 +312,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0x74 => Op::Jz(Operand::RelAddress(decoder.read_rel8())),
         0x75 => Op::Jnz(Operand::RelAddress(decoder.read_rel8())),
         0xEB => Op::Jmp(Operand::RelAddress(decoder.read_rel8())),
+        0xE3 => Op::Jcxz(Operand::RelAddress(decoder.read_rel8())),
         0x86 => {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);

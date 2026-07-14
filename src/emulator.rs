@@ -1,19 +1,17 @@
 use std::fmt::Display;
 
 use crate::{
-    bios::Bios,
-    dos::Dos,
-    isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16},
+    bios::Bios, dos::Dos, isa::{EffectiveAddressBase, MemSpec, Op, Operand, Register8, Register16, SegmentRegister},
 };
 
 #[derive(Debug, Default)]
 pub struct Registers {
     // 0: AX, 1: CX, 2: DX, 3: BX, 4: SP, 5: BP, 6: SI, 7: DI
     gpr: [u16; 8],
-    _cs: u16,
-    _ds: u16,
-    _es: u16,
-    _ss: u16,
+    cs: u16,
+    ds: u16,
+    es: u16,
+    ss: u16,
 
     ip: u16,
 }
@@ -33,6 +31,19 @@ impl Registers {
 
     pub fn ip(&self) -> u16 {
         self.ip
+    }
+
+    pub fn cs(&self) -> u16 {
+        self.cs
+    }
+    pub fn ds(&self) -> u16 {
+        self.ds
+    }
+    pub fn es(&self) -> u16 {
+        self.es
+    }
+    pub fn ss(&self) -> u16 {
+        self.ss
     }
 }
 
@@ -349,6 +360,12 @@ impl Cpu {
             Operand::RelAddress(val) => *val,
             Operand::Mem8(spec) => machine.read_u8(self.resolve_address(spec)) as u16,
             Operand::Mem16(spec) => machine.read_u16(self.resolve_address(spec)),
+            Operand::SegmentRegister(reg) => match reg {
+                SegmentRegister::Cs => self.registers.cs(),
+                SegmentRegister::Ds => self.registers.ds(),
+                SegmentRegister::Es => self.registers.es(),
+                SegmentRegister::Ss => self.registers.ss(),
+            }
         }
     }
 
@@ -358,6 +375,14 @@ impl Cpu {
             Operand::Register16(reg) => self.registers.write16(*reg, value),
             Operand::Mem8(spec) => machine.write_u8(self.resolve_address(spec), value as u8),
             Operand::Mem16(spec) => machine.write_u16(self.resolve_address(spec), value),
+            Operand::SegmentRegister(reg) => {
+                match reg {
+                    SegmentRegister::Cs => self.registers.cs = value,
+                    SegmentRegister::Ds => self.registers.ds = value,
+                    SegmentRegister::Es => self.registers.es = value,
+                    SegmentRegister::Ss => self.registers.ss = value,
+                }
+            }
             _ => panic!("Operand read only!"),
         }
     }
@@ -480,7 +505,9 @@ impl Cpu {
             Op::Shr { src, dst } => {
                 let src_value = self.get_operand_value(machine, &src);
                 let dst_value = self.get_operand_value(machine, &dst);
-                self.set_operand_value(machine, &dst, dst_value.wrapping_shr(src_value as u32));
+                let result =  dst_value.wrapping_shr(src_value as u32);
+                self.set_operand_value(machine, &dst, result);
+                self.flags.zero = result == 0;
             }
             Op::Add { src, dst } => {
                 let src_val = self.get_operand_value(machine, &src);
@@ -497,6 +524,12 @@ impl Cpu {
                 let dest = self.get_operand_value(machine, &target);
                 self.push_u16(machine, self.registers.ip());
                 self.registers.set_ip(dest);
+            }
+            Op::Jcxz(target)  => {
+                if self.registers.read16(Register16::Cx) == 0 {
+                    let dest =  self.get_operand_value(machine, &target);
+                    self.registers.set_ip(dest);
+                }
             }
             instruction => {
                 println!("[EMU][ERROR] Unknown instruction: {instruction}.");
