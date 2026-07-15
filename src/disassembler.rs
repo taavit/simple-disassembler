@@ -104,6 +104,7 @@ impl Display for Op {
 
             Op::Jmp(j) => write!(f, "jmp {j}"),
             Op::Jz(j) => write!(f, "jz {j}"),
+            Op::Jg(j) => write!(f, "jg {j}"),
             Op::Jcxz(j) => write!(f, "jcxz {j}"),
             Op::Jnz(j) => write!(f, "jnz {j}"),
             Op::Mov { src, dst } => write!(f, "mov {dst},{src}"),
@@ -127,6 +128,8 @@ impl Display for Op {
             Op::Sub { src, dst } => write!(f, "sub {dst},{src}"),
             Op::Cmp { src, dst } => write!(f, "cmp {dst},{src}"),
             Op::Call { target: offset } => write!(f, "call {offset}"),
+            Op::Clc => write!(f, "clc"),
+            Op::Stc => write!(f, "stc"),
 
             Op::Db(v) => write!(f, "db {:02X}h", v),
             Op::Invalid => write!(f, "(invalid)"),

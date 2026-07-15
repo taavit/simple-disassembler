@@ -107,6 +107,16 @@ pub struct MemSpec {
     /// Displacement
     pub disp: i16,
     pub is_direct: bool,
+    pub segment: Option<SegmentRegister>,
+}
+
+impl MemSpec {
+    pub fn uses_bp(&self) -> bool {
+        matches!(
+            self.base,
+            EffectiveAddressBase::Bp | EffectiveAddressBase::BpSi | EffectiveAddressBase::BpDi
+        )
+    }
 }
 
 impl From<Register8> for Operand {
@@ -120,7 +130,7 @@ pub enum Operand {
     Register16(Register16),
     Imm8(u8),
     Imm16(u16),
-    RelAddress(u16),
+    RelAddress(i16),
     Mem8(MemSpec),
     Mem16(MemSpec),
     SegmentRegister(SegmentRegister),
@@ -137,6 +147,8 @@ pub enum Op {
     PopDs,
     Cld,
     Std,
+    Clc,
+    Stc,
 
     Int(u8),
     PopReg16(Register16),
@@ -145,6 +157,7 @@ pub enum Op {
     Dec(Operand),
     Jmp(Operand),
     Jz(Operand),
+    Jg(Operand),
     Jcxz(Operand),
     Jnz(Operand),
     Call { target: Operand },

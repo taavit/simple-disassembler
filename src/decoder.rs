@@ -14,27 +14,29 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn read_u16(&mut self) -> u16 {
-        let r = self.machine.read_u16(self.cpu.registers.ip());
+        let r = self
+            .cpu
+            .read_u16(self.machine, SegmentRegister::Cs, self.cpu.registers.ip());
         self.cpu.registers.step_ip_by(2);
 
         r
     }
 
     pub fn read_u8(&mut self) -> u8 {
-        let r = self.machine.read_u8(self.cpu.registers.ip());
+        let r = self
+            .cpu
+            .read_u8(self.machine, SegmentRegister::Cs, self.cpu.registers.ip());
         self.cpu.registers.step_ip();
 
         r
     }
 
-    pub fn read_rel8(&mut self) -> u16 {
-        let offset = self.read_u8() as i8;
-        self.cpu.registers.ip().wrapping_add_signed(offset as i16)
+    pub fn read_rel8(&mut self) -> i16 {
+        i8::from_ne_bytes([self.read_u8()]) as i16
     }
 
-    pub fn read_rel16(&mut self) -> u16 {
-        let offset = self.read_u16() as i16;
-        self.cpu.registers.ip().wrapping_add_signed(offset)
+    pub fn read_rel16(&mut self) -> i16 {
+        self.read_u16() as i16
     }
 }
 
@@ -54,12 +56,14 @@ fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
                 base: EffectiveAddressBase::None,
                 disp: addr as i16,
                 is_direct: true,
+                segment: None,
             })
         }
         (0b00, _) => Operand::Mem8(MemSpec {
             base: EffectiveAddressBase::from(rm),
             disp: 0,
             is_direct: false,
+            segment: None,
         }),
         (0b01, _) => {
             let disp = decoder.read_u8() as i8;
@@ -67,6 +71,7 @@ fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
                 base: EffectiveAddressBase::from(rm),
                 disp: disp as i16,
                 is_direct: false,
+                segment: None,
             })
         }
         (0b10, _) => {
@@ -75,6 +80,7 @@ fn decode_rm8(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
                 base: EffectiveAddressBase::from(rm),
                 is_direct: false,
                 disp,
+                segment: None,
             })
         }
         (0b11, _) => Operand::Register8(Register8::from(rm)),
@@ -96,8 +102,18 @@ fn decode_rm16(decoder: &mut Decoder, mode: u8, rm: u8) -> Operand {
 }
 
 pub fn decode(decoder: &mut Decoder) -> Instruction {
+    let mut opcode = decoder.read_u8();
+    let segment_override = match opcode {
+        0x26 => Some(SegmentRegister::Es),
+        0x2E => Some(SegmentRegister::Cs),
+        0x36 => Some(SegmentRegister::Ss),
+        0x3E => Some(SegmentRegister::Ds),
+        _ => None,
+    };
+    if segment_override.is_some() {
+        opcode = decoder.read_u8();
+    }
     let address = decoder.cpu.registers.ip();
-    let opcode = decoder.read_u8();
     let op: Op = match opcode {
         0x06 => Op::PushEs,
         0x07 => Op::PopEs,
@@ -105,6 +121,8 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0xE9 => Op::Jmp(Operand::RelAddress(decoder.read_rel16())),
         0xAD => Op::Lodsw,
         0x1F => Op::PopDs,
+        0xF8 => Op::Clc,
+        0xF9 => Op::Stc,
         0xFC => Op::Cld,
         0xFD => Op::Std,
         0x05 => {
@@ -112,6 +130,13 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Add {
                 src: Operand::Imm16(imm),
                 dst: Operand::Register16(Register16::Ax),
+            }
+        }
+        0x3C => {
+            let imm = decoder.read_u8();
+            Op::Cmp {
+                src: Operand::Register8(Register8::Al),
+                dst: Operand::Imm16(imm as u16),
             }
         }
         0xD0 => {
@@ -200,6 +225,18 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             } else {
                 let dst = decode_rm8(decoder, mode, rm);
                 let src = Operand::Imm8(decoder.read_u8());
+
+                Op::Mov { src, dst }
+            }
+        }
+        0xC7 => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+            if reg != 0 {
+                Op::Invalid
+            } else {
+                let dst = decode_rm16(decoder, mode, rm);
+                let src = Operand::Imm16(decoder.read_u16());
 
                 Op::Mov { src, dst }
             }
@@ -302,6 +339,25 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
                 _ => unreachable!(),
             }
         }
+        0x81 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let dst = decode_rm16(decoder, mode, rm);
+            let imm = decoder.read_u16();
+            let src = Operand::Imm16(imm);
+
+            match reg {
+                0 => Op::Add { dst, src },
+                1 => Op::Or { dst, src },
+                2 => Op::Adc { dst, src },
+                3 => Op::Sbb { dst, src },
+                4 => Op::And { dst, src },
+                5 => Op::Sub { dst, src },
+                6 => Op::Xor { dst, src },
+                7 => Op::Cmp { dst, src },
+                _ => unreachable!(),
+            }
+        }
         0xCD => {
             let num = decoder.read_u8();
             Op::Int(num)
@@ -358,6 +414,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
                 target: Operand::RelAddress(rel),
             }
         }
+        0x7F => Op::Jg(Operand::RelAddress(decoder.read_rel8())),
         0xD1 => {
             let modrm = decoder.read_u8();
             let (mode, reg, rm) = decode_modrm(modrm);
@@ -382,6 +439,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
     };
 
     Instruction {
+        segment_override,
         address,
         size: (decoder.cpu.registers.ip() - address) as u8,
         op,
@@ -389,6 +447,7 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
 }
 
 pub struct Instruction {
+    pub segment_override: Option<SegmentRegister>,
     pub address: u16,
     pub size: u8,
     pub op: Op,

@@ -21,7 +21,7 @@ impl Dos {
                     0x09 => {
                         let mut addr = cpu.registers.read16(Register16::Dx);
                         loop {
-                            let ch = machine.read_u8(addr);
+                            let ch = machine.read_u8(addr as u32);
                             if ch == b'$' {
                                 break;
                             }
