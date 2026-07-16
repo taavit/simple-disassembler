@@ -123,8 +123,41 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
         0x1F => Op::PopDs,
         0xF8 => Op::Clc,
         0xF9 => Op::Stc,
+        0xFA => Op::Cli,
+        0xFB => Op::Sti,
         0xFC => Op::Cld,
         0xFD => Op::Std,
+        0xA1 => {
+            let offset = decoder.read_u16();
+            Op::Mov {
+                dst: Operand::Register16(Register16::Ax),
+                src: Operand::Mem16(MemSpec {
+                    base: EffectiveAddressBase::None,
+                    disp: offset as i16,
+                    is_direct: true,
+                    segment: Some(SegmentRegister::Ds),
+                }),
+            }
+        }
+        0xA3 => {
+            let offset = decoder.read_u16();
+            Op::Mov {
+                src: Operand::Register16(Register16::Ax),
+                dst: Operand::Mem16(MemSpec {
+                    base: EffectiveAddressBase::None,
+                    disp: offset as i16,
+                    is_direct: true,
+                    segment: Some(SegmentRegister::Ds),
+                }),
+            }
+        }
+        0x2D => {
+            let imm = decoder.read_u16();
+            Op::Sub {
+                src: Operand::Imm16(imm),
+                dst: Operand::Register16(Register16::Ax),
+            }
+        }
         0x05 => {
             let imm = decoder.read_u16();
             Op::Add {
@@ -181,6 +214,16 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
             Op::Xor {
                 src: Operand::Register8(src),
                 dst,
+            }
+        }
+        0x32 => {
+            let moderm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(moderm);
+            let dst = Register8::from(reg);
+            let src = decode_rm8(decoder, mode, rm);
+            Op::Xor {
+                dst: Operand::Register8(dst),
+                src,
             }
         }
 
@@ -278,6 +321,15 @@ pub fn decode(decoder: &mut Decoder) -> Instruction {
 
             let src = Operand::SegmentRegister(SegmentRegister::from(reg));
             let dst = decode_rm16(decoder, mode, rm);
+
+            Op::Mov { src, dst }
+        }
+        0x8E => {
+            let modrm = decoder.read_u8();
+            let (mode, reg, rm) = decode_modrm(modrm);
+
+            let src = decode_rm16(decoder, mode, rm);
+            let dst = Operand::SegmentRegister(SegmentRegister::from(reg));
 
             Op::Mov { src, dst }
         }

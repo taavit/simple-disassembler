@@ -96,6 +96,8 @@ impl Display for Op {
             Op::PushCs => f.write_str("push cs"),
             Op::PopDs => f.write_str("pop ds"),
             Op::Cld => f.write_str("cld"),
+            Op::Cli => f.write_str("cli"),
+            Op::Sti => f.write_str("sti"),
             Op::Int(num) => write!(f, "int {:02X}h", num),
             Op::PopReg16(reg) => write!(f, "pop {reg}"),
             Op::PushReg16(reg) => write!(f, "push {reg}"),

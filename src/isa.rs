@@ -146,6 +146,8 @@ pub enum Op {
     PushCs,
     PopDs,
     Cld,
+    Cli,
+    Sti,
     Std,
     Clc,
     Stc,

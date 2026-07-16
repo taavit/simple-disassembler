@@ -430,6 +430,12 @@ impl Cpu {
             Op::Std => {
                 self.flags.direction = true;
             }
+            Op::Cli => {
+                self.flags.interrupt = false;
+            }
+            Op::Sti => {
+                self.flags.interrupt = true;
+            }
             Op::Lodsw => {
                 let si_address = self.registers.read16(Register16::Si);
                 let val = self.read_u16(machine, SegmentRegister::Ds, si_address);
@@ -466,7 +472,7 @@ impl Cpu {
             Op::Int(0x10) => {
                 return Bios::handle_interrupt(0x10, self, machine);
             }
-            Op::Int(0x21) => {
+            Op::Int(0x20..=0x21) => {
                 return Dos::handle_interrupt(0x21, self, machine);
             }
             Op::Cmp { src, dst } => {
@@ -551,6 +557,19 @@ impl Cpu {
                 self.flags.carry = carry;
                 self.flags.overflow = ((dst_val ^ result) & (src_val ^ result) & 0x8000) != 0;
                 self.flags.half_carry = ((dst_val & 0x0F) + (src_val & 0x0F)) > 0x0F;
+                self.flags.parity = (result as u8).count_ones() % 2 == 0;
+            }
+
+            Op::Sub { src, dst } => {
+                let src_val = self.get_operand_value(machine, &src);
+                let dst_val = self.get_operand_value(machine, &dst);
+                let (result, carry) = dst_val.overflowing_sub(src_val);
+                self.set_operand_value(machine, &dst, result);
+                self.flags.zero = result == 0;
+                self.flags.sign_flag = (result & 0x8000) != 0;
+                self.flags.carry = carry;
+                self.flags.overflow = ((dst_val ^ result) & (src_val ^ result) & 0x8000) != 0;
+                self.flags.half_carry = ((dst_val & 0x0F) - (src_val & 0x0F)) > 0x0F;
                 self.flags.parity = (result as u8).count_ones() % 2 == 0;
             }
             Op::Ret => {

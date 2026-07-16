@@ -11,6 +11,10 @@ impl Dos {
 
     pub fn handle_interrupt(interrupt: u8, cpu: &mut Cpu, machine: &mut Machine) -> bool {
         match interrupt {
+            0x20 => {
+                println!("[DOS] Exit");
+                return false;
+            }
             0x21 => {
                 let ah = cpu.registers.read8(Register8::Ah);
                 match ah {
@@ -29,6 +33,15 @@ impl Dos {
                             machine.screen.write_char(ch);
                             addr = addr.wrapping_add(1);
                         }
+                    }
+                    0x26 => {
+                        let drive = cpu.registers.read8(Register8::Al);
+                        let psp_segment = cpu.registers.read16(Register16::Dx);
+
+                        println!(
+                            "[DOS] Create PSP (old) - Drive {}, PSP Segment {:04X}",
+                            drive, psp_segment
+                        );
                     }
                     0x30 => {
                         cpu.registers.write8(Register8::Al, Self::DOS_VERSION_MAJOR);
